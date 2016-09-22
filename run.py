@@ -4,6 +4,7 @@ import shlex
 import i2c44780
 
 LCD = None
+ANIM_FUTURE = None
 
 class Response():
     OK = 'OK'
@@ -46,6 +47,29 @@ def cmd_backlight(args):
         else:
             return error('backlight: unknown arg, either on or off')
 
+@asyncio.coroutine
+def run_animation():
+    while True:
+        print('anim step')
+        yield from asyncio.sleep(1)
+
+def cmd_animation(args):
+    global ANIM_FUTURE
+    if len(args) < 1:
+        return error('animation: insufficient args, 1 expected')
+    if args[0].strip().lower() == 'off':
+        if ANIM_FUTURE is not None:
+            ANIM_FUTURE.cancel()
+        return ok()
+    elif args[0].strip().lower() == 'on':
+        if ANIM_FUTURE is None or ANIM_FUTURE.done():
+            ANIM_FUTURE = asyncio.async(run_animation)
+            #asyncio.run_until_complete(run_animation)
+        return ok()
+    else:
+        return error('backlight: unknown arg, either on or off')
+
+
 def handle_command(cmd):
     tokens = shlex.split(cmd)
     if len(tokens) == 0:
@@ -61,6 +85,9 @@ def handle_command(cmd):
 
     elif cmd == 'backlight':
         return cmd_backlight(args)
+
+    elif cmd == 'animation':
+        return cmd_animation(args)
 
     else:
         return error('{}: unknown command'.format(cmd))
