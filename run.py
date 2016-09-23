@@ -3,7 +3,7 @@ import websockets
 import shlex
 import i2c44780
 
-LCD = None
+DISPLAY = None
 ANIM_FUTURE = None
 
 class Response():
@@ -23,15 +23,74 @@ def ok(msg=''):
 def error(msg=''):
     return Response(Response.ERR, msg)
 
+class Line():
+    def __init__(self, text='', offset=0, incr=1):
+        self.text = text
+        self.offset = offset
+        self.incr = incr
+
+class Display():
+    def __init__(self):
+        self.anim_future = None
+        self.lcd = i2c44780.I2C_44780()
+        self.lines = [Line() for i in range(4)]
+
+    def clear(self):
+        self.lcd.clear()
+
+    def backlight_on(self):
+        self.lcd.backlight(True)
+
+    def backlight_off(self):
+        self.lcd.backlight(False)
+
+    #@asyncio.coroutine
+    def start_animation(self):
+        if self.anim_future is None or self.anim_future.done():
+            self.anim_future = asyncio.async(self.step_animation())
+            return ok('animation started')
+        else:
+            return ok('animation was already running, nothing to be done')
+            #asyncio.run_until_complete(run_animation)
+
+    def stop_animation(self):
+        if self.anim_future is not None and not self.anim_future.done():
+            self.anim_future.cancel()
+            return ok('animation stopped')
+        else:
+            return ok('animation was not running, nothing to be done')
+
+    #@asyncio.coroutine
+    def step_animation(self):
+        print('anim step')
+        for index, line in [(i, l) for (i, l) in enumerate(self.lines) if len(l.text) > 20]:
+            next_offset = line.offset + line.incr
+            if next_offset < 0:
+                next_offset = 0
+                line.incr *= -1
+            elif len(line.text) - next_offset < 20:
+                next_offset = len(line.text) - 20
+                line.incr *= -1
+            line.offset = next_offset
+            next_text = line.text[line.offset:line.offset+20]
+            self.lcd.write(next_text, index)
+            print(line.text, ':', line.offset, ':', line.offset+20)
+            print(next_text)
+
+    def set_line(self, i, text):
+        self.lines[i] = Line(format(text, ' <20'))
+        self.lcd.write(self.lines[i].text[:20], i)
+        print('line {}: {}'.format(i, self.lines[i].text))
+
 def cmd_line(args):
     if len(args) < 2:
         return error('line: insufficient args, 2 expected')
     else:
-        LCD.write(' '.join(args[1:]), int(args[0]))
+        DISPLAY.set_line(int(args[0]), ' '.join(args[1:]))
         return ok()
 
 def cmd_clear():
-    LCD.clear()
+    DISPLAY.clear()
     return ok()
 
 def cmd_backlight(args):
@@ -39,33 +98,44 @@ def cmd_backlight(args):
         return error('backlight: insufficient args, 1 expected')
     else:
         if args[0].strip().lower() == 'off':
-            LCD.backlight(False)
+            DISPLAY.backlight_off()
             return ok()
         elif args[0].strip().lower() == 'on':
-            LCD.backlight(True)
+            DISPLAY.backlight_on()
             return ok()
         else:
             return error('backlight: unknown arg, either on or off')
 
 @asyncio.coroutine
-def run_animation():
+def step_animation():
     while True:
-        print('anim step')
+        DISPLAY.step_animation()
         yield from asyncio.sleep(1)
 
 def cmd_animation(args):
     global ANIM_FUTURE
+
     if len(args) < 1:
         return error('animation: insufficient args, 1 expected')
+
     if args[0].strip().lower() == 'off':
-        if ANIM_FUTURE is not None:
+        if ANIM_FUTURE is not None and not ANIM_FUTURE.done():
             ANIM_FUTURE.cancel()
-        return ok()
+            return ok('animation stopped')
+        else:
+            return ok('animation was not running, nothing to be done')
+        #return DISPLAY.stop_animation()
+
     elif args[0].strip().lower() == 'on':
         if ANIM_FUTURE is None or ANIM_FUTURE.done():
-            ANIM_FUTURE = asyncio.async(run_animation)
+            ANIM_FUTURE = asyncio.async(step_animation())
+            return ok('animation started')
+
+        else:
+            return ok('animation was already running, nothing to be done')
             #asyncio.run_until_complete(run_animation)
-        return ok()
+        #return DISPLAY.start_animation()
+
     else:
         return error('backlight: unknown arg, either on or off')
 
@@ -81,7 +151,8 @@ def handle_command(cmd):
         return cmd_line(args)
 
     elif cmd == 'clear':
-        return cmd_clear()
+        DISPLAY.clear()
+        return ok('display cleared')
 
     elif cmd == 'backlight':
         return cmd_backlight(args)
@@ -102,8 +173,8 @@ def serve(websocket, path):
 
 
 def main():
-    global LCD
-    LCD = i2c44780.I2C_44780()
+    global DISPLAY
+    DISPLAY = Display()
     start_server = websockets.serve(serve, 'localhost', 8765)
     asyncio.get_event_loop().run_until_complete(start_server)
     asyncio.get_event_loop().run_forever()
