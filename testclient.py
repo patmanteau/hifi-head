@@ -8,7 +8,7 @@ def hello():
     websocket = yield from websockets.connect('ws://localhost:8765/')
 
     try:
-        name = input("What's your name? ")
+        name = input(">")
         yield from websocket.send(name)
         print("> {}".format(name))
 

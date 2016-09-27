@@ -1,5 +1,4 @@
-i2c44780
-cffi==1.8.3                                                                                                           │< OK
-pycparser==2.14                                                                                                       │What's your name? clear
-smbus-cffi==0.5.1                                                                                                     │> clear
+cffi==1.8.3
+pycparser==2.14
+smbus-cffi==0.5.1
 websockets==3.2
